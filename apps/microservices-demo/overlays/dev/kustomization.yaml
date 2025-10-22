@@ -1,0 +1,13 @@
+namespace: dev
+
+resources:
+  # Upstream microservices-demo release manifests
+  - https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/main/release/kubernetes-manifests.yaml
+  # Local resources to adapt for AWS ALB + HPA
+  - ingress.yaml
+  - hpa-frontend.yaml
+
+patchesStrategicMerge:
+  # Make the external service ClusterIP so ALB Ingress fronts it
+  - patch-service-frontend-external.yaml
+

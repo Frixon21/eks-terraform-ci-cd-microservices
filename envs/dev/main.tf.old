@@ -1,0 +1,191 @@
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.region
+  profile = "ubuntu"
+}
+
+variable "region" {
+  description = "AWS region to deploy into"
+  type        = string
+  default     = "us-east-1"
+}
+
+# Fetch the default VPC
+data "aws_vpc" "default" {
+  default = true
+}
+
+# Fetch public subnets 
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "map-public-ip-on-launch"
+    values = ["true"]
+  }
+  filter {
+    name   = "availability-zone"
+    values = ["us-east-1a","us-east-1b","us-east-1c","us-east-1d","us-east-1f"]
+  }
+}
+
+###### IAM role for EKS control plane
+data "aws_iam_policy_document" "eks_cluster_assume" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["eks.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "eks_cluster" {
+  name               = "eksClusterRole"
+  assume_role_policy = data.aws_iam_policy_document.eks_cluster_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "cluster_policies" {
+  role       = aws_iam_role.eks_cluster.name
+  for_each = toset([
+    "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
+    "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController",
+  ])
+  policy_arn = each.value
+}
+######
+
+###### IAM role for EKS worker nodes
+data "aws_iam_policy_document" "eks_node_assume" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "eks_node" {
+  name               = "eksNodeRole"
+  assume_role_policy = data.aws_iam_policy_document.eks_node_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "node_policies" {
+  role       = aws_iam_role.eks_node.name
+  for_each = toset([
+    "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+  ])
+  policy_arn = each.value
+}
+#########
+
+######## EKS cluster
+resource "aws_eks_cluster" "demo" {
+  name     = "microservices-demo"
+  role_arn = aws_iam_role.eks_cluster.arn
+  version = "1.31"
+  vpc_config {
+    subnet_ids = data.aws_subnets.public.ids
+  }
+
+  # Enable default add-ons managed by EKS
+  enabled_cluster_log_types = []
+}
+
+# EKS managed node group
+resource "aws_eks_node_group" "workers" {
+  cluster_name    = aws_eks_cluster.demo.name
+  node_group_name = "standard-workers"
+  node_role_arn   = aws_iam_role.eks_node.arn
+  subnet_ids      = data.aws_subnets.public.ids
+
+  scaling_config {
+    desired_size = 1
+    max_size     = 2
+    min_size     = 1
+  }
+
+  instance_types = ["t3.large"]
+
+  depends_on = [aws_eks_cluster.demo]
+}
+#######
+
+#######Addons
+resource "aws_eks_addon" "coredns" {
+  cluster_name = aws_eks_cluster.demo.name
+  addon_name   = "coredns"
+  resolve_conflicts = "OVERWRITE"
+  depends_on   = [aws_eks_node_group.workers]
+}
+
+resource "aws_eks_addon" "kube_proxy" {
+  cluster_name = aws_eks_cluster.demo.name
+  addon_name   = "kube-proxy"
+  resolve_conflicts = "OVERWRITE"
+  depends_on   = [aws_eks_node_group.workers]
+}
+
+resource "aws_eks_addon" "vpc_cni" {
+  cluster_name      = aws_eks_cluster.demo.name
+  addon_name        = "vpc-cni"
+  resolve_conflicts = "OVERWRITE"
+  depends_on        = [aws_eks_node_group.workers]
+}
+
+resource "aws_eks_addon" "metrics_server" {
+  cluster_name       = aws_eks_cluster.demo.name
+  addon_name         = "metrics-server"
+  resolve_conflicts  = "OVERWRITE" 
+  depends_on         = [aws_eks_node_group.workers]
+}
+
+resource "aws_eks_addon" "pod_identity_agent" {
+  cluster_name = aws_eks_cluster.demo.name
+  addon_name   = "eks-pod-identity-agent"
+  resolve_conflicts = "OVERWRITE"
+  depends_on   = [aws_eks_node_group.workers]
+}
+
+#resource "aws_eks_addon" "node_monitoring_agent" {
+#  cluster_name = aws_eks_cluster.demo.name
+#  addon_name   = "node-monitoring-agent"
+#  resolve_conflicts = "OVERWRITE"
+#  depends_on   = [aws_eks_node_group.workers]
+#}
+
+########
+
+
+resource "null_resource" "deploy_online_boutique" {
+  provisioner "local-exec" {
+    command = <<EOT
+      aws eks update-kubeconfig --name ${aws_eks_cluster.demo.name} --region ${var.region}
+      kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/main/release/kubernetes-manifests.yaml
+    EOT
+  }
+
+  # ensure infra is ready first
+  depends_on = [
+    aws_eks_node_group.workers,
+    aws_eks_addon.vpc_cni,
+    aws_eks_addon.coredns,
+    aws_eks_addon.kube_proxy,
+  ]
+}
