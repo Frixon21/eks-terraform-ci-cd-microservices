@@ -8,6 +8,7 @@
 infra-apply:
 	terraform -chdir=envs/dev init
 	terraform -chdir=envs/dev apply -auto-approve
+	aws eks update-kubeconfig --name microservices-demo --region us-east-1 --profile ubuntu
 
 addons-apply:
 	terraform -chdir=envs/addons init
