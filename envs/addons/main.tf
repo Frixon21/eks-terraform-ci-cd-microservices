@@ -54,9 +54,8 @@ resource "kubernetes_namespace" "dev" {
   metadata { name = "dev" }
 }
 
-// staging/prod namespaces removed for MVP; keep platform + dev only
 
-# Your addons module now belongs here (unchanged inputs, but sourced from remote state)
+# addons module now belongs here (unchanged inputs, but sourced from remote state)
 module "addons" {
   source = "../../modules/addons"
 
@@ -68,7 +67,6 @@ module "addons" {
   namespace         = var.namespace
   tags              = local.common_tags
 
-  # If your module references namespaces, you can add explicit depends_on
   depends_on = [
     kubernetes_namespace.platform
   ]

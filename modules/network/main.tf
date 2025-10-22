@@ -1,5 +1,5 @@
 # File: modules/network/main.tf
-# Lookup default VPC and public subnets (keeps behavior identical)
+# Lookup default VPC and public subnets 
 data "aws_vpc" "default" {
   default = true
 }
