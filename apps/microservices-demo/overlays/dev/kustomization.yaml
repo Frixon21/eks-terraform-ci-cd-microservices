@@ -11,4 +11,4 @@ patchesStrategicMerge:
   # Make the external service ClusterIP so ALB Ingress fronts it
   - patch-service-frontend-external.yaml
   # Temporarily remove recommendationservice for demo; delete to add it back via CI/CD
-  - remove-recommendation.yaml #added back
+  #- remove-recommendation.yaml #added back
