@@ -39,21 +39,68 @@ resource "aws_iam_role" "alb" {
 
 data "aws_iam_policy_document" "alb_policy" {
   statement {
+    sid     = "ElasticLoadBalancing"
+    effect  = "Allow"
     actions = [
+      # Broad but practical for dev/MVP; you can scope later
       "elasticloadbalancing:*",
-      "ec2:Describe*",
-      "ec2:Get*",
-      "ec2:CreateSecurityGroup",
-      "ec2:DeleteSecurityGroup",
+      # These two are required for tagging ALB resources
+      "elasticloadbalancing:AddTags",
+      "elasticloadbalancing:RemoveTags"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "EC2SecurityGroupsAndTags"
+    effect  = "Allow"
+    actions = [
       "ec2:AuthorizeSecurityGroupIngress",
       "ec2:RevokeSecurityGroupIngress",
-      "tag:GetResources",
-      "tag:TagResources",
+      "ec2:CreateSecurityGroup",
+      "ec2:DeleteSecurityGroup",
+      # Tagging on EC2 SGs is what your events were denying
+      "ec2:CreateTags",
+      "ec2:DeleteTags",
+      # Describes and Gets are used for subnet/SG/discovery flows
+      "ec2:Describe*",
+      "ec2:Get*"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "IAMServiceLinkedRoleAndCerts"
+    effect  = "Allow"
+    actions = [
       "iam:CreateServiceLinkedRole",
+      "iam:GetServerCertificate",
+      "iam:ListServerCertificates"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "ACMWAFShieldCognito"
+    effect  = "Allow"
+    actions = [
+      "acm:DescribeCertificate",
+      "acm:ListCertificates",
+      "acm:GetCertificate",
       "waf-regional:*",
       "wafv2:*",
       "shield:*",
       "cognito-idp:DescribeUserPoolClient"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "TagAPI"
+    effect  = "Allow"
+    actions = [
+      "tag:GetResources",
+      "tag:TagResources"
     ]
     resources = ["*"]
   }

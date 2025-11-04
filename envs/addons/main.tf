@@ -73,3 +73,16 @@ module "addons" {
     kubernetes_namespace.platform
   ]
 }
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  namespace            = var.namespace       # "platform"
+  release_name         = "kps"
+  chart_version        = "58.3.2"
+  namespace_ready_dep  = kubernetes_namespace.platform
+
+  depends_on = [
+    module.addons      # ensure ALB controller is up before creating Ingress
+  ]
+}
