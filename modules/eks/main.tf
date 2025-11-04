@@ -11,12 +11,41 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     subnet_ids = var.subnet_ids
   }
+
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   version = var.cluster_version
 
   tags = merge(var.tags, {
     "eks.io/cluster-name" = var.cluster_name
   })
 }
+
+# Bootstrap RBAC via EKS Access Entries (no kube access required)
+resource "aws_eks_access_entry" "bootstrap_admin" {
+  count         = var.admin_principal_arn == null ? 0 : 1
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = var.admin_principal_arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "bootstrap_admin" {
+  count         = var.admin_principal_arn == null ? 0 : 1
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = var.admin_principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.bootstrap_admin]
+}
+
+// RBAC access entry/policy are created above. No additional barrier resource needed.
 
 # ----- NODE GROUPS -----
 resource "aws_eks_node_group" "workers" {

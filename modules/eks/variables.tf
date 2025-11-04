@@ -51,3 +51,9 @@ variable "addon_resolve_conflicts" {
   description = "Conflict resolution strategy for EKS addons"
   default     = null
 }
+
+variable "admin_principal_arn" {
+  description = "Optional IAM user/role ARN to grant cluster-admin via EKS Access API. Leave null to skip."
+  type        = string
+  default     = null
+}
